@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/spf13/cobra"
 )
@@ -68,27 +71,41 @@ The grove will be created in the /tmp directory instead
 // The path must be a directory, or an error is returned.
 // Repo must be a valid URL to the repository (remote or local).
 func NewGrove(repo, path string) error {
-	err := initializeRootDir(path)
-	if err != nil {
-		return fmt.Errorf("failed to initialize directory: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), repoCloneTimeout)
 	defer cancel()
 
-	_, err = git.PlainCloneContext(ctx, path, &git.CloneOptions{
+	// Create root of grove
+	err := newOrEmptyDir(path)
+	if err != nil {
+		return fmt.Errorf("directory %q is invalid: %w", path, err)
+	}
+
+	// Create default worktree location
+	branch, err := defaultBranch(ctx, repo)
+	if err != nil {
+		return fmt.Errorf("failed to determine default branch for repository %q: %w", repo, err)
+	}
+	defaultWorktreePath := filepath.Join(path, branch)
+
+	err = newOrEmptyDir(defaultWorktreePath)
+	if err != nil {
+		return fmt.Errorf("directory %q is invalid: %w", path, err)
+	}
+
+	_, err = git.PlainClone(defaultWorktreePath, &git.CloneOptions{
 		URL: repo,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to clone %q into %q: %w", repo, path, err)
+		return fmt.Errorf("failed to clone repository %q into %q: %w", repo, defaultWorktreePath, err)
 	}
+
 	return nil
 }
 
-// initializeRootDir creates a directory at the given path, if none exists.
+// newOrEmptyDir validates that the provided path refers to an empty directory, or creates an empty directory at the given path if none exists.
 //
 // If the given path refers to a non-directory file or an existing, non-empty directory, an error is returned.
-func initializeRootDir(path string) error {
+func newOrEmptyDir(path string) error {
 	files, err := os.ReadDir(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -109,6 +126,30 @@ func initializeRootDir(path string) error {
 		return fmt.Errorf("directory %q is not empty", path)
 	}
 	return nil
+}
+
+// defaultBranch retrieves refs from the given repository and locates the target branch for HEAD
+func defaultBranch(ctx context.Context, repo string) (string, error) {
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{repo},
+	})
+
+	refs, err := remote.ListContext(ctx, &git.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to list refs for repository %q: %w", repo, err)
+	}
+
+	for _, ref := range refs {
+		if ref.Name() == "HEAD" {
+			branch := ref.Target().Short()
+			if branch == "" {
+				return "", fmt.Errorf("HEAD ref for repository %q has missing target", repo)
+			}
+			return branch, nil
+		}
+	}
+
+	return "", fmt.Errorf("no HEAD ref in repository %q", repo)
 }
 
 // nameOf parses a standard URL or local path for the provided git repo to determine its name
