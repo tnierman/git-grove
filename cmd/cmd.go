@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/tnierman/git-grove/cmd/initialize"
 )
 
 // grove represents the base command when called without any subcommands
@@ -13,6 +14,10 @@ var grove = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	},
+}
+
+func init() {
+	grove.AddCommand(initalize.Command)
 }
 
 func Grove() error {
