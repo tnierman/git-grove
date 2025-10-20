@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ The grove will be created in the /tmp directory instead
 	`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		// ExactArgs ensures there's at least one argument to this command
+		// RangeArgs ensures there's at least one argument to this command
 		repo := args[0]
 
 		dir := ""
@@ -92,8 +93,14 @@ func NewGrove(repo, path string) error {
 		return fmt.Errorf("directory %q is invalid: %w", path, err)
 	}
 
+	auth, err := ssh.NewSSHAgentAuth("git")
+	if err != nil {
+		return fmt.Errorf("failed to create ssh agent for authentication: %w", err)
+	}
+
 	_, err = git.PlainClone(defaultWorktreePath, &git.CloneOptions{
-		URL: repo,
+		URL:  repo,
+		Auth: auth,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to clone repository %q into %q: %w", repo, defaultWorktreePath, err)
@@ -134,7 +141,14 @@ func defaultBranch(ctx context.Context, repo string) (string, error) {
 		URLs: []string{repo},
 	})
 
-	refs, err := remote.ListContext(ctx, &git.ListOptions{})
+	auth, err := ssh.NewSSHAgentAuth("git")
+	if err != nil {
+		return "", fmt.Errorf("failed to create ssh agent for authentication: %w", err)
+	}
+
+	refs, err := remote.ListContext(ctx, &git.ListOptions{
+		Auth: auth,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to list refs for repository %q: %w", repo, err)
 	}
