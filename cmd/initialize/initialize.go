@@ -9,18 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v6"
-	"github.com/go-git/go-git/v6/config"
-	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
-	"github.com/go-git/go-git/v6/storage/memory"
-
 	"github.com/spf13/cobra"
+	"github.com/tnierman/git-grove/pkg/git"
 )
 
 const (
 	defaultDirectoryPermissions = 0o0755
 
-	repoCloneTimeout = 60 * time.Second
+	groveInitTimeout = 60 * time.Second
 )
 
 var Command = &cobra.Command{
@@ -45,11 +41,15 @@ The grove will be created in the /tmp directory instead
 	`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		// RangeArgs ensures there's at least one argument to this command
-		repo := args[0]
+		var (
+			// RangeArgs ensures there's at least one argument to this command
+			repo = args[0]
 
-		dir := ""
-		var err error
+			dir string
+			err error
+		)
+
+		// Get dir from arguments, if provided, or default to repo name
 		if len(args) > 1 {
 			dir = args[1]
 		} else {
@@ -72,38 +72,32 @@ The grove will be created in the /tmp directory instead
 // The path must be a directory, or an error is returned.
 // Repo must be a valid URL to the repository (remote or local).
 func NewGrove(repo, path string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), repoCloneTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), groveInitTimeout)
 	defer cancel()
 
-	// Create root of grove
-	err := newOrEmptyDir(path)
+	repository := git.NewRepository(repo)
+	branch, err := repository.DefaultBranch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to determine default branch for repository %q: %w", repo, err)
+	}
+
+	// Validate that both the root of grove and default worktree dir are empty, or do not exist on init.
+	// Because we want both to be empty or newly-created, perform the check in two steps
+	err = newOrEmptyDir(path)
 	if err != nil {
 		return fmt.Errorf("directory %q is invalid: %w", path, err)
 	}
 
-	// Create default worktree location
-	branch, err := defaultBranch(ctx, repo)
-	if err != nil {
-		return fmt.Errorf("failed to determine default branch for repository %q: %w", repo, err)
-	}
 	defaultWorktreePath := filepath.Join(path, branch)
-
 	err = newOrEmptyDir(defaultWorktreePath)
 	if err != nil {
 		return fmt.Errorf("directory %q is invalid: %w", path, err)
 	}
 
-	auth, err := ssh.NewSSHAgentAuth("git")
+	// Finally, clone the repo into the default worktree location
+	err = repository.Clone(defaultWorktreePath)
 	if err != nil {
-		return fmt.Errorf("failed to create ssh agent for authentication: %w", err)
-	}
-
-	_, err = git.PlainClone(defaultWorktreePath, &git.CloneOptions{
-		URL:  repo,
-		Auth: auth,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to clone repository %q into %q: %w", repo, defaultWorktreePath, err)
+		return fmt.Errorf("failed to clone %q to %q: %w", repo, defaultWorktreePath, err)
 	}
 
 	return nil
@@ -133,37 +127,6 @@ func newOrEmptyDir(path string) error {
 		return fmt.Errorf("directory %q is not empty", path)
 	}
 	return nil
-}
-
-// defaultBranch retrieves refs from the given repository and locates the target branch for HEAD
-func defaultBranch(ctx context.Context, repo string) (string, error) {
-	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
-		URLs: []string{repo},
-	})
-
-	auth, err := ssh.NewSSHAgentAuth("git")
-	if err != nil {
-		return "", fmt.Errorf("failed to create ssh agent for authentication: %w", err)
-	}
-
-	refs, err := remote.ListContext(ctx, &git.ListOptions{
-		Auth: auth,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to list refs for repository %q: %w", repo, err)
-	}
-
-	for _, ref := range refs {
-		if ref.Name() == "HEAD" {
-			branch := ref.Target().Short()
-			if branch == "" {
-				return "", fmt.Errorf("HEAD ref for repository %q has missing target", repo)
-			}
-			return branch, nil
-		}
-	}
-
-	return "", fmt.Errorf("no HEAD ref in repository %q", repo)
 }
 
 // nameOf parses a standard URL or local path for the provided git repo to determine its name
