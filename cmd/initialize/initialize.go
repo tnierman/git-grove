@@ -71,14 +71,14 @@ The grove will be created in the /tmp directory instead
 //
 // The path must be a directory, or an error is returned.
 // Repo must be a valid URL to the repository (remote or local).
-func NewGrove(repo, path string) error {
+func NewGrove(repoURL, path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), groveInitTimeout)
 	defer cancel()
 
-	repository := git.NewRepository(repo)
+	repository := git.NewRepository(repoURL)
 	branch, err := repository.DefaultBranch(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to determine default branch for repository %q: %w", repo, err)
+		return fmt.Errorf("failed to determine default branch for repository %q: %w", repository.Remote, err)
 	}
 
 	// Validate that both the root of grove and default worktree dir are empty, or do not exist on init.
@@ -97,7 +97,7 @@ func NewGrove(repo, path string) error {
 	// Finally, clone the repo into the default worktree location
 	err = repository.Clone(defaultWorktreePath)
 	if err != nil {
-		return fmt.Errorf("failed to clone %q to %q: %w", repo, defaultWorktreePath, err)
+		return fmt.Errorf("failed to clone %q to %q: %w", repository.Remote, defaultWorktreePath, err)
 	}
 
 	return nil
