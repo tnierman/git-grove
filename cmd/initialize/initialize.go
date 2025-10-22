@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/tnierman/git-grove/pkg/git"
+	"github.com/tnierman/git-grove/pkg/git/remote"
 )
 
 const (
@@ -75,10 +75,14 @@ func NewGrove(repoURL, path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), groveInitTimeout)
 	defer cancel()
 
-	repository := git.NewRepository(repoURL)
+	repository, err := remote.NewRepository(repoURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to remote repository: %w", err)
+	}
+
 	branch, err := repository.DefaultBranch(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to determine default branch for repository %q: %w", repository.Remote, err)
+		return fmt.Errorf("failed to determine default branch for repository %q: %w", repoURL, err)
 	}
 
 	// Validate that both the root of grove and default worktree dir are empty, or do not exist on init.
@@ -97,7 +101,7 @@ func NewGrove(repoURL, path string) error {
 	// Finally, clone the repo into the default worktree location
 	err = repository.Clone(defaultWorktreePath)
 	if err != nil {
-		return fmt.Errorf("failed to clone %q to %q: %w", repository.Remote, defaultWorktreePath, err)
+		return fmt.Errorf("failed to clone %q to %q: %w", repoURL, defaultWorktreePath, err)
 	}
 
 	return nil
