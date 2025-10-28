@@ -19,6 +19,10 @@ const (
 	groveInitTimeout = 60 * time.Second
 )
 
+var (
+	createAllBranches bool
+)
+
 var Command = &cobra.Command{
 	Use:   "init <repo> [<directory>]",
 	Short: "Initialize new grove",
@@ -63,8 +67,13 @@ The grove will be created in the /tmp directory instead
 		if err != nil {
 			return fmt.Errorf("failed to create new grove: %w", err)
 		}
+
 		return nil
 	},
+}
+
+func init() {
+	Command.Flags().BoolVarP(&createAllBranches, "all-branches", "b", false, "Create worktrees for all branches when initializing a new grove. By default, only the default brach has a worktree created when initializing new grove")
 }
 
 // NewGrove creates a grove for the given repo at the provided path.
