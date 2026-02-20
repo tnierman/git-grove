@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/tnierman/git-grove/cmd/add"
 	"github.com/tnierman/git-grove/cmd/convert"
 	"github.com/tnierman/git-grove/cmd/initialize"
 )
@@ -18,8 +19,9 @@ var grove = &cobra.Command{
 }
 
 func init() {
-	grove.AddCommand(initalize.Command)
+	grove.AddCommand(add.Command)
 	grove.AddCommand(convert.Command)
+	grove.AddCommand(initalize.Command)
 }
 
 func Grove() error {
